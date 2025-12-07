@@ -1,0 +1,525 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  password      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts             Account[]
+  sessions             Session[]
+  workspaceMemberships WorkspaceMember[]
+  ownedWorkspaces      Workspace[]
+  enrollments          Enrollment[]
+  lessonProgress       LessonProgress[]
+  lessonNotes          LessonNote[]
+  orders               Order[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Workspace {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  ownerId     String
+  planId      String?
+  trialEndsAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  owner            User              @relation(fields: [ownerId], references: [id])
+  plan             Plan?             @relation(fields: [planId], references: [id])
+  members          WorkspaceMember[]
+  domains          Domain[]
+  pages            Page[]
+  funnels          Funnel[]
+  products         Product[]
+  courses          Course[]
+  integrations     Integration[]
+  analyticsEvents  AnalyticsEvent[]
+  webhooks         Webhook[]
+
+  @@index([ownerId])
+  @@index([slug])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        Role      @default(VIEWER)
+  invitedAt   DateTime  @default(now())
+  acceptedAt  DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model Plan {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  monthlyPrice     Int
+  yearlyPrice      Int
+  maxMonthlyVisits Int
+  maxPages         Int
+  maxFunnels       Int
+  maxCourses       Int
+  maxCourseMembers Int
+  maxCustomDomains Int
+  features         Json
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  workspaces Workspace[]
+}
+
+model Domain {
+  id         String   @id @default(cuid())
+  workspaceId String
+  domain     String   @unique
+  isVerified Boolean  @default(false)
+  isPrimary  Boolean  @default(false)
+  sslStatus  String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model Page {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  title           String
+  slug            String
+  metaTitle       String?
+  metaDescription String?
+  ogImage         String?
+  content         Json
+  isPublished     Boolean   @default(false)
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  funnelSteps FunnelStep[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model Funnel {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  steps     FunnelStep[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model FunnelStep {
+  id        String   @id @default(cuid())
+  funnelId  String
+  pageId    String
+  stepType  StepType
+  stepOrder Int
+  pathRules Json?
+  createdAt DateTime @default(now())
+
+  funnel Funnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  page   Page   @relation(fields: [pageId], references: [id])
+
+  @@index([funnelId])
+  @@index([pageId])
+}
+
+enum StepType {
+  OPTIN
+  SALES
+  CHECKOUT
+  UPSELL
+  DOWNSELL
+  THANKYOU
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String
+  description String?
+  type        ProductType
+  courseId    String?     @unique
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  course     Course?      @relation(fields: [courseId], references: [id])
+  prices     Price[]
+  orderItems OrderItem[]
+  bumpOffers BumpOffer[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+enum ProductType {
+  DIGITAL
+  COURSE
+  BUNDLE
+  SUBSCRIPTION
+}
+
+model Price {
+  id            String         @id @default(cuid())
+  productId     String
+  amount        Int
+  currency      String         @default("USD")
+  interval      PriceInterval?
+  intervalCount Int?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+enum PriceInterval {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+model BumpOffer {
+  id          String   @id @default(cuid())
+  productId   String
+  name        String
+  description String
+  price       Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model Coupon {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  discountType  DiscountType
+  discountValue Int
+  maxUses       Int?
+  usedCount     Int          @default(0)
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+
+  orders Order[]
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  userId          String?
+  email           String
+  status          OrderStatus @default(PENDING)
+  subtotal        Int
+  discount        Int         @default(0)
+  total           Int
+  currency        String      @default("USD")
+  couponId        String?
+  paymentProvider String?
+  paymentId       String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user   User?       @relation(fields: [userId], references: [id])
+  coupon Coupon?     @relation(fields: [couponId], references: [id])
+  items  OrderItem[]
+
+  @@index([userId])
+  @@index([email])
+  @@index([status])
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  ABANDONED
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int    @default(1)
+  price     Int
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  workspaceId String
+  title       String
+  slug        String
+  description String?
+  thumbnail   String?
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product      Product?
+  sections     CourseSection[]
+  enrollments  Enrollment[]
+  certificates Certificate[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model CourseSection {
+  id          String   @id @default(cuid())
+  courseId    String
+  title       String
+  description String?
+  order       Int
+  createdAt   DateTime @default(now())
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id          String     @id @default(cuid())
+  sectionId   String
+  title       String
+  description String?
+  type        LessonType
+  content     Json
+  order       Int
+  dripDays    Int?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  section  CourseSection    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  progress LessonProgress[]
+  notes    LessonNote[]
+
+  @@index([sectionId])
+}
+
+enum LessonType {
+  VIDEO
+  TEXT
+  FILE
+  QUIZ
+}
+
+model Enrollment {
+  id          String           @id @default(cuid())
+  userId      String
+  courseId    String
+  status      EnrollmentStatus @default(ACTIVE)
+  enrolledAt  DateTime         @default(now())
+  completedAt DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+}
+
+model LessonProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  lessonId    String
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+}
+
+model LessonNote {
+  id        String   @id @default(cuid())
+  userId    String
+  lessonId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([lessonId])
+}
+
+model Certificate {
+  id             String   @id @default(cuid())
+  userId         String
+  courseId       String
+  certificateUrl String
+  issuedAt       DateTime @default(now())
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+model AnalyticsEvent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  eventType   String
+  pageId      String?
+  funnelId    String?
+  orderId     String?
+  visitorId   String
+  sessionId   String
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, eventType, createdAt])
+  @@index([visitorId])
+  @@index([sessionId])
+}
+
+model Integration {
+  id          String          @id @default(cuid())
+  workspaceId String
+  type        IntegrationType
+  provider    String
+  config      Json
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+enum IntegrationType {
+  PAYMENT
+  EMAIL
+  WEBHOOK
+  ANALYTICS
+}
+
+model Webhook {
+  id          String   @id @default(cuid())
+  workspaceId String
+  url         String
+  events      String[]
+  secret      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
